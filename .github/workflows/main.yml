@@ -1,0 +1,20 @@
+name: CI
+on: [push, pull_request]
+
+jobs:
+  # Check Code style quickly by running `rustfmt` over all code
+  rustfmt:
+    name: Rustfmt
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v2
+    - run: rustup component add rustfmt
+    - run: cargo fmt --all -- --check
+
+  # Check Code style quickly by running `rustfmt` over all code
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v2
+    - run: cargo test --all
