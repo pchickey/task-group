@@ -7,7 +7,7 @@ use tokio::task::JoinHandle;
 
 /// A TaskGroup is used to spawn a collection of tasks. The collection has two properties:
 /// * if any task returns an error or panicks, all tasks are terminated.
-/// * if the TaskManager returned by TaskGroup::start is dropped, all tasks are terminated.
+/// * if the `TaskManager` returned by `TaskGroup::new` is dropped, all tasks are terminated.
 pub struct TaskGroup<E> {
     runtime: tokio::runtime::Handle,
     new_task: mpsc::Sender<ChildHandle<E>>,
