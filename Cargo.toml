@@ -4,6 +4,8 @@ version = "0.1.0"
 authors = ["Pat Hickey <pat@moreproductive.org>"]
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/pchickey/task-group"
+description = "manage groups of tokio tasks"
+keywords = ["tokio", "async"]
 readme = "README.md"
 edition = "2018"
 
