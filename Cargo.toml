@@ -1,0 +1,15 @@
+[package]
+name = "task-group"
+version = "0.1.0"
+authors = ["Pat Hickey <pat@moreproductive.org>"]
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/pchickey/task-group"
+readme = "README.md"
+edition = "2018"
+
+[dependencies]
+tokio = { version = "^1.2.0", default-features = false, features = ["rt", "sync"] }
+
+[dev-dependencies]
+anyhow = "1"
+tokio = { version = "^1.2.0", features = ["full"] }
