@@ -118,14 +118,18 @@ impl<E> Future for TaskManager<E> {
                         s.children.push(Box::pin(new_child));
                     }
                     Poll::Ready(None) => {
-                        // Channel has closed and all messages have been recieved. No longer need
-                        // channel.
+                        // Channel has closed and all messages have been recieved. No
+                        // longer need channel.
                         break None;
                     }
                 }
             };
         }
 
+        // Need to mutate s after discovering error: store here temporarily
+        let mut err = None;
+        // Need to iterate through vec, possibly removing via swap_remove, so we cant use
+        // a normal iterator:
         let mut child_ix = 0;
         while s.children.get(child_ix).is_some() {
             let child = s
@@ -143,25 +147,34 @@ impl<E> Future for TaskManager<E> {
                 }
                 // Child returns with error: yield the error
                 Poll::Ready(Ok(Err(error))) => {
-                    return Poll::Ready(Err(RuntimeError::Application {
+                    err = Some(RuntimeError::Application {
                         name: child.name.clone(),
                         error,
-                    }))
+                    });
+                    break;
                 }
                 // Child join error: it either panicked or was canceled
                 Poll::Ready(Err(e)) => {
-                    return Poll::Ready(Err(match e.try_into_panic() {
+                    err = Some(match e.try_into_panic() {
                         Ok(panic) => RuntimeError::Panic {
                             name: child.name.clone(),
                             panic,
                         },
                         Err(_) => unreachable!("impossible to cancel tasks in TaskGroup"),
-                    }))
+                    });
+                    break;
                 }
             }
         }
 
-        if s.children.is_empty() {
+        if let Some(err) = err {
+            // Drop all children, and the channel reciever, current tasks are destroyed
+            // and new tasks cannot be created:
+            s.children.truncate(0);
+            s.channel.take();
+            // Return the error:
+            Poll::Ready(Err(err))
+        } else if s.children.is_empty() {
             if s.channel.is_none() {
                 // Task manager is complete when there are no more children, and
                 // no more channel to get more children:
