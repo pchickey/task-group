@@ -9,14 +9,12 @@ use tokio::task::JoinHandle;
 /// * if any task returns an error or panicks, all tasks are terminated.
 /// * if the `TaskManager` returned by `TaskGroup::new` is dropped, all tasks are terminated.
 pub struct TaskGroup<E> {
-    runtime: tokio::runtime::Handle,
     new_task: mpsc::Sender<ChildHandle<E>>,
 }
 // not the derived impl: E does not need to be Clone
 impl<E> Clone for TaskGroup<E> {
     fn clone(&self) -> Self {
         Self {
-            runtime: self.runtime.clone(),
             new_task: self.new_task.clone(),
         }
     }
@@ -24,12 +22,8 @@ impl<E> Clone for TaskGroup<E> {
 
 impl<E: Send + 'static> TaskGroup<E> {
     pub fn new() -> (Self, TaskManager<E>) {
-        Self::new_with(tokio::runtime::Handle::current())
-    }
-
-    pub fn new_with(runtime: tokio::runtime::Handle) -> (Self, TaskManager<E>) {
         let (new_task, reciever) = mpsc::channel(64);
-        let group = TaskGroup { runtime, new_task };
+        let group = TaskGroup { new_task };
         let manager = TaskManager::new(reciever);
         (group, manager)
     }
@@ -40,7 +34,38 @@ impl<E: Send + 'static> TaskGroup<E> {
         f: impl Future<Output = Result<(), E>> + Send + 'static,
     ) -> Result<(), SpawnError> {
         let name = name.as_ref().to_string();
-        let join = self.runtime.spawn(f);
+        let join = tokio::task::spawn(f);
+        match self.new_task.send(ChildHandle { name, join }).await {
+            Ok(()) => Ok(()),
+            // If there is no receiver alive to manage the new task, drop the child in error to
+            // cancel it:
+            Err(_child) => Err(SpawnError::GroupDied),
+        }
+    }
+
+    pub async fn spawn_on(
+        &self,
+        name: impl AsRef<str>,
+        runtime: tokio::runtime::Handle,
+        f: impl Future<Output = Result<(), E>> + Send + 'static,
+    ) -> Result<(), SpawnError> {
+        let name = name.as_ref().to_string();
+        let join = runtime.spawn(f);
+        match self.new_task.send(ChildHandle { name, join }).await {
+            Ok(()) => Ok(()),
+            // If there is no receiver alive to manage the new task, drop the child in error to
+            // cancel it:
+            Err(_child) => Err(SpawnError::GroupDied),
+        }
+    }
+
+    pub async fn spawn_local(
+        &self,
+        name: impl AsRef<str>,
+        f: impl Future<Output = Result<(), E>> + 'static,
+    ) -> Result<(), SpawnError> {
+        let name = name.as_ref().to_string();
+        let join = tokio::task::spawn_local(f);
         match self.new_task.send(ChildHandle { name, join }).await {
             Ok(()) => Ok(()),
             // If there is no receiver alive to manage the new task, drop the child in error to
