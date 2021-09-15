@@ -73,6 +73,11 @@ impl<E: Send + 'static> TaskGroup<E> {
             Err(_child) => Err(SpawnError::GroupDied),
         }
     }
+
+    /// Returns `true` if the task group has been shut down.
+    pub fn is_closed(&self) -> bool {
+        self.new_task.is_closed()
+    }
 }
 
 struct ChildHandle<E> {
