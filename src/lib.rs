@@ -557,8 +557,12 @@ mod test {
 
         async fn big_future() -> Result<(), ()> {
             let big_object = [0_u8; 4096];
-            // Hold _big_object across an await point
+            // Hold big_object across an await point
             async { () }.await;
+            println!(
+                "printing big_object to keep value from being optimized out: {:?}",
+                big_object
+            );
             drop(big_object);
             Ok(())
         }
