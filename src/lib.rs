@@ -28,49 +28,55 @@ impl<E: Send + 'static> TaskGroup<E> {
         (group, manager)
     }
 
-    pub async fn spawn(
+    pub fn spawn(
         &self,
         name: impl AsRef<str>,
         f: impl Future<Output = Result<(), E>> + Send + 'static,
-    ) -> Result<(), SpawnError> {
+    ) -> impl Future<Output = Result<(), SpawnError>> + '_ {
         let name = name.as_ref().to_string();
         let join = tokio::task::spawn(f);
-        match self.new_task.send(ChildHandle { name, join }).await {
-            Ok(()) => Ok(()),
-            // If there is no receiver alive to manage the new task, drop the child in error to
-            // cancel it:
-            Err(_child) => Err(SpawnError::GroupDied),
+        async move {
+            match self.new_task.send(ChildHandle { name, join }).await {
+                Ok(()) => Ok(()),
+                // If there is no receiver alive to manage the new task, drop the child in error to
+                // cancel it:
+                Err(_child) => Err(SpawnError::GroupDied),
+            }
         }
     }
 
-    pub async fn spawn_on(
+    pub fn spawn_on(
         &self,
         name: impl AsRef<str>,
         runtime: tokio::runtime::Handle,
         f: impl Future<Output = Result<(), E>> + Send + 'static,
-    ) -> Result<(), SpawnError> {
+    ) -> impl Future<Output = Result<(), SpawnError>> + '_ {
         let name = name.as_ref().to_string();
         let join = runtime.spawn(f);
-        match self.new_task.send(ChildHandle { name, join }).await {
-            Ok(()) => Ok(()),
-            // If there is no receiver alive to manage the new task, drop the child in error to
-            // cancel it:
-            Err(_child) => Err(SpawnError::GroupDied),
+        async move {
+            match self.new_task.send(ChildHandle { name, join }).await {
+                Ok(()) => Ok(()),
+                // If there is no receiver alive to manage the new task, drop the child in error to
+                // cancel it:
+                Err(_child) => Err(SpawnError::GroupDied),
+            }
         }
     }
 
-    pub async fn spawn_local(
+    pub fn spawn_local(
         &self,
         name: impl AsRef<str>,
         f: impl Future<Output = Result<(), E>> + 'static,
-    ) -> Result<(), SpawnError> {
+    ) -> impl Future<Output = Result<(), SpawnError>> + '_ {
         let name = name.as_ref().to_string();
         let join = tokio::task::spawn_local(f);
-        match self.new_task.send(ChildHandle { name, join }).await {
-            Ok(()) => Ok(()),
-            // If there is no receiver alive to manage the new task, drop the child in error to
-            // cancel it:
-            Err(_child) => Err(SpawnError::GroupDied),
+        async move {
+            match self.new_task.send(ChildHandle { name, join }).await {
+                Ok(()) => Ok(()),
+                // If there is no receiver alive to manage the new task, drop the child in error to
+                // cancel it:
+                Err(_child) => Err(SpawnError::GroupDied),
+            }
         }
     }
 
@@ -504,5 +510,65 @@ mod test {
         let res = tokio::time::timeout(Duration::from_secs(1), tm).await;
         assert!(res.is_err(), "timed out");
         assert_eq!(*l.lock().await, vec!["child gonna nap"]);
+    }
+
+    // This serves as a regression check for https://github.com/pchickey/task-group/issues/3
+    // I'm not sure how fragile this test will be, since it may
+    // depend on Rust and LLVM's ability to optimize out unused
+    // allocations like big_object.
+    #[test]
+    fn sizes_of_futures() {
+        use std::mem::size_of_val;
+        assert!(size_of_val(&big_future()) > size_of_val(&empty_future()));
+        assert_eq!(
+            size_of_val(&spawns_big_future_using_tokio()),
+            size_of_val(&spawns_empty_future_using_tokio())
+        );
+
+        assert_eq!(
+            size_of_val(&spawns_big_future_using_task_group()),
+            size_of_val(&spawns_empty_future_using_task_group())
+        );
+
+        async fn spawns_big_future_using_task_group() {
+            let (task_group, task_manager) = TaskGroup::new();
+            task_group.spawn("big future", big_future()).await.unwrap();
+            drop(task_group);
+            task_manager.await.unwrap();
+        }
+
+        async fn spawns_empty_future_using_task_group() {
+            let (task_group, task_manager) = TaskGroup::new();
+            task_group
+                .spawn("empty future", empty_future())
+                .await
+                .unwrap();
+            drop(task_group);
+            task_manager.await.unwrap();
+        }
+
+        async fn spawns_big_future_using_tokio() {
+            tokio::spawn(big_future()).await.unwrap().unwrap();
+        }
+
+        async fn spawns_empty_future_using_tokio() {
+            tokio::spawn(empty_future()).await.unwrap().unwrap();
+        }
+
+        async fn big_future() -> Result<(), ()> {
+            let big_object = [0_u8; 4096];
+            // Hold big_object across an await point
+            async { () }.await;
+            println!(
+                "printing big_object to keep value from being optimized out: {:?}",
+                big_object
+            );
+            drop(big_object);
+            Ok(())
+        }
+
+        async fn empty_future() -> Result<(), ()> {
+            Ok(())
+        }
     }
 }
