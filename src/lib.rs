@@ -46,34 +46,40 @@ impl<E: Send + 'static> TaskGroup<E> {
         }
     }
 
-    pub async fn spawn_on(
+    pub fn spawn_on(
         &self,
         name: impl AsRef<str>,
         runtime: tokio::runtime::Handle,
         f: impl Future<Output = Result<(), E>> + Send + 'static,
-    ) -> Result<(), SpawnError> {
+    ) -> impl Future<Output = Result<(), SpawnError>> {
         let name = name.as_ref().to_string();
         let join = runtime.spawn(f);
-        match self.new_task.send(ChildHandle { name, join }).await {
-            Ok(()) => Ok(()),
-            // If there is no receiver alive to manage the new task, drop the child in error to
-            // cancel it:
-            Err(_child) => Err(SpawnError::GroupDied),
+        let new_task = self.new_task.clone();
+        async move {
+            match new_task.send(ChildHandle { name, join }).await {
+                Ok(()) => Ok(()),
+                // If there is no receiver alive to manage the new task, drop the child in error to
+                // cancel it:
+                Err(_child) => Err(SpawnError::GroupDied),
+            }
         }
     }
 
-    pub async fn spawn_local(
+    pub fn spawn_local(
         &self,
         name: impl AsRef<str>,
         f: impl Future<Output = Result<(), E>> + 'static,
-    ) -> Result<(), SpawnError> {
+    ) -> impl Future<Output = Result<(), SpawnError>> {
         let name = name.as_ref().to_string();
         let join = tokio::task::spawn_local(f);
-        match self.new_task.send(ChildHandle { name, join }).await {
-            Ok(()) => Ok(()),
-            // If there is no receiver alive to manage the new task, drop the child in error to
-            // cancel it:
-            Err(_child) => Err(SpawnError::GroupDied),
+        let new_task = self.new_task.clone();
+        async move {
+            match new_task.send(ChildHandle { name, join }).await {
+                Ok(()) => Ok(()),
+                // If there is no receiver alive to manage the new task, drop the child in error to
+                // cancel it:
+                Err(_child) => Err(SpawnError::GroupDied),
+            }
         }
     }
 
