@@ -508,4 +508,60 @@ mod test {
         assert!(res.is_err(), "timed out");
         assert_eq!(*l.lock().await, vec!["child gonna nap"]);
     }
+
+    // This serves as a regression check for https://github.com/pchickey/task-group/issues/3
+    // I'm not sure how fragile this test will be, since it may
+    // depend on Rust and LLVM's ability to optimize out unused
+    // allocations like big_object.
+    #[test]
+    fn sizes_of_futures() {
+        use std::mem::size_of_val;
+        assert!(size_of_val(&big_future()) > size_of_val(&empty_future()));
+        assert_eq!(
+            size_of_val(&spawns_big_future_using_tokio()),
+            size_of_val(&spawns_empty_future_using_tokio())
+        );
+
+        assert_eq!(
+            size_of_val(&spawns_big_future_using_task_group()),
+            size_of_val(&spawns_empty_future_using_task_group())
+        );
+
+        async fn spawns_big_future_using_task_group() {
+            let (task_group, task_manager) = TaskGroup::new();
+            task_group.spawn("big future", big_future()).await.unwrap();
+            drop(task_group);
+            task_manager.await.unwrap();
+        }
+
+        async fn spawns_empty_future_using_task_group() {
+            let (task_group, task_manager) = TaskGroup::new();
+            task_group
+                .spawn("empty future", empty_future())
+                .await
+                .unwrap();
+            drop(task_group);
+            task_manager.await.unwrap();
+        }
+
+        async fn spawns_big_future_using_tokio() {
+            tokio::spawn(big_future()).await.unwrap().unwrap();
+        }
+
+        async fn spawns_empty_future_using_tokio() {
+            tokio::spawn(empty_future()).await.unwrap().unwrap();
+        }
+
+        async fn big_future() -> Result<(), ()> {
+            let big_object = [0_u8; 4096];
+            // Hold _big_object across an await point
+            async { () }.await;
+            drop(big_object);
+            Ok(())
+        }
+
+        async fn empty_future() -> Result<(), ()> {
+            Ok(())
+        }
+    }
 }
