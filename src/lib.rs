@@ -32,12 +32,11 @@ impl<E: Send + 'static> TaskGroup<E> {
         &self,
         name: impl AsRef<str>,
         f: impl Future<Output = Result<(), E>> + Send + 'static,
-    ) -> impl Future<Output = Result<(), SpawnError>> {
+    ) -> impl Future<Output = Result<(), SpawnError>> + '_ {
         let name = name.as_ref().to_string();
         let join = tokio::task::spawn(f);
-        let new_task = self.new_task.clone();
         async move {
-            match new_task.send(ChildHandle { name, join }).await {
+            match self.new_task.send(ChildHandle { name, join }).await {
                 Ok(()) => Ok(()),
                 // If there is no receiver alive to manage the new task, drop the child in error to
                 // cancel it:
@@ -51,12 +50,11 @@ impl<E: Send + 'static> TaskGroup<E> {
         name: impl AsRef<str>,
         runtime: tokio::runtime::Handle,
         f: impl Future<Output = Result<(), E>> + Send + 'static,
-    ) -> impl Future<Output = Result<(), SpawnError>> {
+    ) -> impl Future<Output = Result<(), SpawnError>> + '_ {
         let name = name.as_ref().to_string();
         let join = runtime.spawn(f);
-        let new_task = self.new_task.clone();
         async move {
-            match new_task.send(ChildHandle { name, join }).await {
+            match self.new_task.send(ChildHandle { name, join }).await {
                 Ok(()) => Ok(()),
                 // If there is no receiver alive to manage the new task, drop the child in error to
                 // cancel it:
@@ -69,12 +67,11 @@ impl<E: Send + 'static> TaskGroup<E> {
         &self,
         name: impl AsRef<str>,
         f: impl Future<Output = Result<(), E>> + 'static,
-    ) -> impl Future<Output = Result<(), SpawnError>> {
+    ) -> impl Future<Output = Result<(), SpawnError>> + '_ {
         let name = name.as_ref().to_string();
         let join = tokio::task::spawn_local(f);
-        let new_task = self.new_task.clone();
         async move {
-            match new_task.send(ChildHandle { name, join }).await {
+            match self.new_task.send(ChildHandle { name, join }).await {
                 Ok(()) => Ok(()),
                 // If there is no receiver alive to manage the new task, drop the child in error to
                 // cancel it:
