@@ -1,4 +1,8 @@
 
+## Please use `tokio::task::JoinSet` instead
+
+This crate pre-dated [`tokio::task::JoinSet`](https://docs.rs/tokio/latest/tokio/task/struct.JoinSet.html). `JoinSet` is probably a better abstraction and implementation than this crate: please consider using it instead.
+
 # `task-group`
 
 A small crate for managing groups of tokio tasks.
